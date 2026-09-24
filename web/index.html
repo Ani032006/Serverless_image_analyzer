@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serverless Image Analyzer — Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <span class="brand-title">Serverless Image Analyzer</span>
+        <span class="badge-env">AWS Local Test Environment</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <!-- Service Pipeline Indicator -->
+    <section class="pipeline-bar">
+      <div class="step" id="step-s3">
+        <span class="step-num">1</span>
+        <div class="step-info">
+          <span class="step-label">Amazon S3</span>
+          <span class="step-sub">ObjectCreated:Put</span>
+        </div>
+      </div>
+      <div class="connector" id="conn-1"></div>
+
+      <div class="step" id="step-lambda">
+        <span class="step-num">2</span>
+        <div class="step-info">
+          <span class="step-label">AWS Lambda</span>
+          <span class="step-sub">handler.py</span>
+        </div>
+      </div>
+      <div class="connector" id="conn-2"></div>
+
+      <div class="step" id="step-rekognition">
+        <span class="step-num">3</span>
+        <div class="step-info">
+          <span class="step-label">Rekognition</span>
+          <span class="step-sub">detect_labels()</span>
+        </div>
+      </div>
+      <div class="connector" id="conn-3"></div>
+
+      <div class="step" id="step-dynamodb">
+        <span class="step-num">4</span>
+        <div class="step-info">
+          <span class="step-label">DynamoDB</span>
+          <span class="step-sub">ImageTags Table</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content Layout -->
+    <div class="layout">
+      
+      <!-- Left Column: Controls & Input -->
+      <aside class="sidebar">
+        
+        <div class="card">
+          <div class="card-title">Select Sample Image</div>
+          <div class="sample-grid">
+            <button class="sample-btn active" onclick="selectSample('landscape')">
+              <span class="sample-name">Landscape</span>
+              <span class="sample-meta">JPG • 1.0 MB</span>
+            </button>
+            <button class="sample-btn" onclick="selectSample('traffic')">
+              <span class="sample-name">City Traffic</span>
+              <span class="sample-meta">PNG • 2.0 MB</span>
+            </button>
+            <button class="sample-btn" onclick="selectSample('pizza')">
+              <span class="sample-name">Food Dish</span>
+              <span class="sample-meta">JPG • 1.5 MB</span>
+            </button>
+            <button class="sample-btn" onclick="selectSample('dog')">
+              <span class="sample-name">Pet Portrait</span>
+              <span class="sample-meta">JPEG • 1.2 MB</span>
+            </button>
+            <button class="sample-btn sample-invalid" onclick="selectSample('invalid_pdf')">
+              <span class="sample-name">Unsupported PDF</span>
+              <span class="sample-meta">PDF • Validation Error</span>
+            </button>
+          </div>
+
+          <div class="upload-area" id="upload-area">
+            <input type="file" id="file-input" accept="image/*,.pdf" onchange="handleFileUpload(event)">
+            <span class="upload-text">Or click to select your own file</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Lambda Environment Config</div>
+          <div class="form-group">
+            <label for="conf-slider">Min Confidence: <strong id="conf-val">70%</strong></label>
+            <input type="range" id="conf-slider" min="50" max="95" value="70" oninput="updateConfig()">
+          </div>
+
+          <div class="form-group">
+            <label for="max-slider">Max Labels: <strong id="max-val">10</strong></label>
+            <input type="range" id="max-slider" min="1" max="20" value="10" oninput="updateConfig()">
+          </div>
+
+          <button class="btn-run" id="btn-run" onclick="executePipeline()">
+            Run Pipeline Trigger
+          </button>
+        </div>
+
+      </aside>
+
+      <!-- Right Column: Results & Logs -->
+      <section class="main-panel">
+        
+        <!-- Image & Tags Result -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Analysis Results</div>
+            <span class="status-indicator" id="status-indicator">Ready</span>
+          </div>
+
+          <div class="results-grid">
+            <div class="image-box">
+              <img id="image-display" src="" alt="Sample Image">
+              <div class="rejection-banner" id="rejection-banner">
+                Validation Error: File extension invalid (.pdf)
+              </div>
+            </div>
+
+            <div class="labels-box">
+              <div class="labels-header">
+                <span>Detected Label</span>
+                <span>Confidence</span>
+              </div>
+              <div class="labels-list" id="labels-list">
+                <div class="empty-state">Select an image and click "Run Pipeline Trigger".</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Logs / Data Record -->
+        <div class="card">
+          <div class="tab-bar">
+            <button class="tab-item active" onclick="setTab('logs')">Execution Logs</button>
+            <button class="tab-item" onclick="setTab('json')">DynamoDB Record (JSON)</button>
+            <button class="tab-item" onclick="setTab('iam')">IAM Policy</button>
+          </div>
+
+          <div class="tab-view active" id="view-logs">
+            <div class="terminal" id="terminal-log">
+              <div class="log-row info">[00:00:00] System ready. Select an image to simulate S3 trigger.</div>
+            </div>
+          </div>
+
+          <div class="tab-view" id="view-json">
+            <pre class="code-view" id="json-view">// DynamoDB put_item payload will appear here...</pre>
+          </div>
+
+          <div class="tab-view" id="view-iam">
+            <pre class="code-view">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RekognitionDetectLabels",
+      "Effect": "Allow",
+      "Action": ["rekognition:DetectLabels"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3GetObjectPermission",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::image-analyzer-dev-bucket/*"
+    },
+    {
+      "Sid": "DynamoDBPutItemPermission",
+      "Effect": "Allow",
+      "Action": ["dynamodb:PutItem"],
+      "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/ImageTags"
+    }
+  ]
+}</pre>
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>
