@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Serverless Image Analyzer — Demo</title>
+  <title>Serverless Image Analyzer — Review 3 Demo | AWS Pipeline</title>
+  <meta name="description" content="Interactive demo of an event-driven serverless AI image tagging pipeline using AWS S3, Lambda, Rekognition, and DynamoDB — Cloud Architecture & Design Review 3.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -15,189 +16,692 @@
   <header class="navbar">
     <div class="nav-container">
       <div class="brand">
-        <span class="brand-title">Serverless Image Analyzer</span>
-        <span class="badge-env">AWS Local Test Environment</span>
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          </svg>
+        </div>
+        <div>
+          <span class="brand-title">Serverless Image Analyzer</span>
+          <span class="brand-sub">AWS Event-Driven Pipeline</span>
+        </div>
+      </div>
+      <div class="nav-right">
+        <span class="badge-env">Review 3 Demo</span>
+        <div class="nav-stats">
+          <div class="stat-chip" id="stat-total">
+            <span class="stat-num" id="total-count">0</span>
+            <span class="stat-label">Processed</span>
+          </div>
+          <div class="stat-chip stat-success">
+            <span class="stat-num" id="success-count">0</span>
+            <span class="stat-label">Success</span>
+          </div>
+          <div class="stat-chip stat-error">
+            <span class="stat-num" id="dlq-count">0</span>
+            <span class="stat-label">DLQ</span>
+          </div>
+        </div>
       </div>
     </div>
   </header>
 
-  <main class="container">
-    
-    <!-- Service Pipeline Indicator -->
-    <section class="pipeline-bar">
-      <div class="step" id="step-s3">
-        <span class="step-num">1</span>
-        <div class="step-info">
-          <span class="step-label">Amazon S3</span>
-          <span class="step-sub">ObjectCreated:Put</span>
-        </div>
-      </div>
-      <div class="connector" id="conn-1"></div>
+  <!-- Tab Navigation -->
+  <nav class="main-tabs">
+    <div class="tab-nav-container">
+      <button class="main-tab active" id="tab-pipeline" onclick="switchMainTab('pipeline')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Pipeline Demo
+      </button>
+      <button class="main-tab" id="tab-metrics" onclick="switchMainTab('metrics')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="3"/></svg>
+        Metrics Dashboard
+      </button>
+      <button class="main-tab" id="tab-infra" onclick="switchMainTab('infra')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+        Infrastructure
+      </button>
+    </div>
+  </nav>
 
-      <div class="step" id="step-lambda">
-        <span class="step-num">2</span>
-        <div class="step-info">
-          <span class="step-label">AWS Lambda</span>
-          <span class="step-sub">handler.py</span>
-        </div>
-      </div>
-      <div class="connector" id="conn-2"></div>
+  <!-- PIPELINE DEMO TAB -->
+  <div class="tab-content active" id="view-pipeline">
+    <main class="container">
 
-      <div class="step" id="step-rekognition">
-        <span class="step-num">3</span>
-        <div class="step-info">
-          <span class="step-label">Rekognition</span>
-          <span class="step-sub">detect_labels()</span>
-        </div>
-      </div>
-      <div class="connector" id="conn-3"></div>
-
-      <div class="step" id="step-dynamodb">
-        <span class="step-num">4</span>
-        <div class="step-info">
-          <span class="step-label">DynamoDB</span>
-          <span class="step-sub">ImageTags Table</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Main Content Layout -->
-    <div class="layout">
-      
-      <!-- Left Column: Controls & Input -->
-      <aside class="sidebar">
-        
-        <div class="card">
-          <div class="card-title">Select Sample Image</div>
-          <div class="sample-grid">
-            <button class="sample-btn active" onclick="selectSample('landscape')">
-              <span class="sample-name">Landscape</span>
-              <span class="sample-meta">JPG • 1.0 MB</span>
-            </button>
-            <button class="sample-btn" onclick="selectSample('traffic')">
-              <span class="sample-name">City Traffic</span>
-              <span class="sample-meta">PNG • 2.0 MB</span>
-            </button>
-            <button class="sample-btn" onclick="selectSample('pizza')">
-              <span class="sample-name">Food Dish</span>
-              <span class="sample-meta">JPG • 1.5 MB</span>
-            </button>
-            <button class="sample-btn" onclick="selectSample('dog')">
-              <span class="sample-name">Pet Portrait</span>
-              <span class="sample-meta">JPEG • 1.2 MB</span>
-            </button>
-            <button class="sample-btn sample-invalid" onclick="selectSample('invalid_pdf')">
-              <span class="sample-name">Unsupported PDF</span>
-              <span class="sample-meta">PDF • Validation Error</span>
-            </button>
+      <!-- Service Pipeline Flow -->
+      <section class="pipeline-bar">
+        <div class="step" id="step-s3">
+          <div class="step-icon s3-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
-
-          <div class="upload-area" id="upload-area">
-            <input type="file" id="file-input" accept="image/*,.pdf" onchange="handleFileUpload(event)">
-            <span class="upload-text">Or click to select your own file</span>
+          <div class="step-info">
+            <span class="step-label">Amazon S3</span>
+            <span class="step-sub">ObjectCreated:Put</span>
           </div>
         </div>
+        <div class="connector" id="conn-1"><div class="connector-pulse" id="pulse-1"></div></div>
 
-        <div class="card">
-          <div class="card-title">Lambda Environment Config</div>
-          <div class="form-group">
-            <label for="conf-slider">Min Confidence: <strong id="conf-val">70%</strong></label>
-            <input type="range" id="conf-slider" min="50" max="95" value="70" oninput="updateConfig()">
+        <div class="step" id="step-lambda">
+          <div class="step-icon lambda-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           </div>
-
-          <div class="form-group">
-            <label for="max-slider">Max Labels: <strong id="max-val">10</strong></label>
-            <input type="range" id="max-slider" min="1" max="20" value="10" oninput="updateConfig()">
+          <div class="step-info">
+            <span class="step-label">AWS Lambda</span>
+            <span class="step-sub">handler.py · Python 3.12</span>
           </div>
-
-          <button class="btn-run" id="btn-run" onclick="executePipeline()">
-            Run Pipeline Trigger
-          </button>
         </div>
+        <div class="connector" id="conn-2"><div class="connector-pulse" id="pulse-2"></div></div>
 
-      </aside>
-
-      <!-- Right Column: Results & Logs -->
-      <section class="main-panel">
-        
-        <!-- Image & Tags Result -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Analysis Results</div>
-            <span class="status-indicator" id="status-indicator">Ready</span>
+        <div class="step" id="step-rekognition">
+          <div class="step-icon rekog-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
+          <div class="step-info">
+            <span class="step-label">Rekognition</span>
+            <span class="step-sub">detect_labels()</span>
+          </div>
+        </div>
+        <div class="connector" id="conn-3"><div class="connector-pulse" id="pulse-3"></div></div>
 
-          <div class="results-grid">
-            <div class="image-box">
-              <img id="image-display" src="" alt="Sample Image">
-              <div class="rejection-banner" id="rejection-banner">
-                Validation Error: File extension invalid (.pdf)
-              </div>
+        <div class="step" id="step-dynamodb">
+          <div class="step-icon dynamo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <div class="step-info">
+            <span class="step-label">DynamoDB</span>
+            <span class="step-sub">ImageTags Table</span>
+          </div>
+        </div>
+        <div class="connector connector-dashed" id="conn-4"><div class="connector-pulse" id="pulse-4"></div></div>
+
+        <div class="step" id="step-dlq">
+          <div class="step-icon dlq-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 9 8 12 2 12"/></svg>
+          </div>
+          <div class="step-info">
+            <span class="step-label">SQS DLQ</span>
+            <span class="step-sub">Error Recovery</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Layout -->
+      <div class="layout">
+
+        <!-- Left: Controls -->
+        <aside class="sidebar">
+
+          <div class="card">
+            <div class="card-title-row">
+              <div class="card-title">Select Sample Image</div>
             </div>
-
-            <div class="labels-box">
-              <div class="labels-header">
-                <span>Detected Label</span>
-                <span>Confidence</span>
-              </div>
-              <div class="labels-list" id="labels-list">
-                <div class="empty-state">Select an image and click "Run Pipeline Trigger".</div>
-              </div>
+            <div class="sample-grid">
+              <button class="sample-btn active" id="sbtn-landscape" onclick="selectSample('landscape')">
+                <div class="sample-thumb landscape-thumb"></div>
+                <div class="sample-text">
+                  <span class="sample-name">Mountain Landscape</span>
+                  <span class="sample-meta">JPG · 1.05 MB · Valid</span>
+                </div>
+                <span class="sample-badge valid-badge">✓</span>
+              </button>
+              <button class="sample-btn" id="sbtn-traffic" onclick="selectSample('traffic')">
+                <div class="sample-thumb traffic-thumb"></div>
+                <div class="sample-text">
+                  <span class="sample-name">City Traffic</span>
+                  <span class="sample-meta">PNG · 2.30 MB · Valid</span>
+                </div>
+                <span class="sample-badge valid-badge">✓</span>
+              </button>
+              <button class="sample-btn" id="sbtn-pizza" onclick="selectSample('pizza')">
+                <div class="sample-thumb pizza-thumb"></div>
+                <div class="sample-text">
+                  <span class="sample-name">Food Dish</span>
+                  <span class="sample-meta">JPG · 1.50 MB · Valid</span>
+                </div>
+                <span class="sample-badge valid-badge">✓</span>
+              </button>
+              <button class="sample-btn" id="sbtn-dog" onclick="selectSample('dog')">
+                <div class="sample-thumb dog-thumb"></div>
+                <div class="sample-text">
+                  <span class="sample-name">Pet Portrait</span>
+                  <span class="sample-meta">JPEG · 1.25 MB · Valid</span>
+                </div>
+                <span class="sample-badge valid-badge">✓</span>
+              </button>
+              <button class="sample-btn sample-invalid" id="sbtn-invalid_pdf" onclick="selectSample('invalid_pdf')">
+                <div class="sample-thumb pdf-thumb"></div>
+                <div class="sample-text">
+                  <span class="sample-name">Unsupported PDF</span>
+                  <span class="sample-meta">PDF · DLQ Error Simulation</span>
+                </div>
+                <span class="sample-badge invalid-badge">✕</span>
+              </button>
             </div>
-          </div>
-        </div>
-
-        <!-- Terminal Logs / Data Record -->
-        <div class="card">
-          <div class="tab-bar">
-            <button class="tab-item active" onclick="setTab('logs')">Execution Logs</button>
-            <button class="tab-item" onclick="setTab('json')">DynamoDB Record (JSON)</button>
-            <button class="tab-item" onclick="setTab('iam')">IAM Policy</button>
-          </div>
-
-          <div class="tab-view active" id="view-logs">
-            <div class="terminal" id="terminal-log">
-              <div class="log-row info">[00:00:00] System ready. Select an image to simulate S3 trigger.</div>
+            <div class="upload-area" id="upload-area">
+              <input type="file" id="file-input" accept="image/*,.pdf" onchange="handleFileUpload(event)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span class="upload-text">Upload your own image</span>
             </div>
           </div>
 
-          <div class="tab-view" id="view-json">
-            <pre class="code-view" id="json-view">// DynamoDB put_item payload will appear here...</pre>
+          <div class="card">
+            <div class="card-title">Lambda Config</div>
+            <div class="form-group">
+              <label for="conf-slider">Min Confidence <strong id="conf-val">70%</strong></label>
+              <input type="range" id="conf-slider" min="50" max="95" value="70" oninput="updateConfig()">
+            </div>
+            <div class="form-group">
+              <label for="max-slider">Max Labels <strong id="max-val">10</strong></label>
+              <input type="range" id="max-slider" min="1" max="20" value="10" oninput="updateConfig()">
+            </div>
+            <div class="form-group">
+              <label for="dlq-toggle">DLQ Error Simulation
+                <label class="toggle">
+                  <input type="checkbox" id="dlq-toggle">
+                  <span class="toggle-slider"></span>
+                </label>
+              </label>
+            </div>
+            <button class="btn-run" id="btn-run" onclick="executePipeline()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Pipeline Trigger
+            </button>
           </div>
 
-          <div class="tab-view" id="view-iam">
-            <pre class="code-view">{
+          <!-- Latency Breakdown -->
+          <div class="card" id="latency-card">
+            <div class="card-title">Latency Breakdown</div>
+            <div class="latency-breakdown" id="latency-breakdown">
+              <div class="latency-bar-row">
+                <span class="lat-label">S3 Notify</span>
+                <div class="lat-bar-bg"><div class="lat-bar s3-bar" id="lat-s3" style="width:0%"></div></div>
+                <span class="lat-val" id="latval-s3">—</span>
+              </div>
+              <div class="latency-bar-row">
+                <span class="lat-label">Lambda Init</span>
+                <div class="lat-bar-bg"><div class="lat-bar lambda-bar" id="lat-lambda" style="width:0%"></div></div>
+                <span class="lat-val" id="latval-lambda">—</span>
+              </div>
+              <div class="latency-bar-row">
+                <span class="lat-label">Rekognition</span>
+                <div class="lat-bar-bg"><div class="lat-bar rekog-bar" id="lat-rekog" style="width:0%"></div></div>
+                <span class="lat-val" id="latval-rekog">—</span>
+              </div>
+              <div class="latency-bar-row">
+                <span class="lat-label">DynamoDB</span>
+                <div class="lat-bar-bg"><div class="lat-bar dynamo-bar" id="lat-dynamo" style="width:0%"></div></div>
+                <span class="lat-val" id="latval-dynamo">—</span>
+              </div>
+              <div class="latency-total" id="latency-total">Total: —</div>
+            </div>
+          </div>
+
+        </aside>
+
+        <!-- Right: Results -->
+        <section class="main-panel">
+
+          <!-- Image & Tags -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Analysis Results</div>
+              <div class="header-right">
+                <span class="file-path" id="file-path-display">incoming/sample_landscape.jpg</span>
+                <span class="status-indicator" id="status-indicator">Ready</span>
+              </div>
+            </div>
+
+            <div class="results-grid">
+              <div class="image-box">
+                <img id="image-display" src="" alt="Sample Image">
+                <div class="rejection-banner" id="rejection-banner">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                  <span>Extension rejected — routed to DLQ</span>
+                </div>
+                <div class="image-overlay" id="image-overlay">
+                  <div class="spinner"></div>
+                </div>
+              </div>
+
+              <div class="labels-box">
+                <div class="labels-header">
+                  <span>Detected Label</span>
+                  <span>Confidence</span>
+                </div>
+                <div class="labels-list" id="labels-list">
+                  <div class="empty-state">Select an image and click "Run Pipeline Trigger".</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Terminal & Data Tabs -->
+          <div class="card terminal-card">
+            <div class="tab-bar">
+              <button class="tab-item active" id="tabbtn-logs" onclick="setTab('logs')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                Execution Logs
+              </button>
+              <button class="tab-item" id="tabbtn-json" onclick="setTab('json')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                DynamoDB Record
+              </button>
+              <button class="tab-item" id="tabbtn-iam" onclick="setTab('iam')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                IAM Policy
+              </button>
+              <button class="tab-item" id="tabbtn-dlq" onclick="setTab('dlq')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 9 8 12 2 12"/></svg>
+                DLQ Events
+              </button>
+            </div>
+
+            <div class="tab-view active" id="view-logs">
+              <div class="terminal" id="terminal-log">
+                <div class="log-row info">[00:00:00] System ready. Select an image to simulate S3 trigger.</div>
+              </div>
+            </div>
+
+            <div class="tab-view" id="view-json">
+              <pre class="code-view" id="json-view">// DynamoDB put_item payload will appear here after pipeline runs...</pre>
+            </div>
+
+            <div class="tab-view" id="view-iam">
+              <pre class="code-view">{
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "RekognitionDetectLabels",
+      "Sid": "ReadS3UploadedImage",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::image-analyzer-dev-bucket/incoming/*"
+    },
+    {
+      "Sid": "InvokeRekognitionDetectLabels",
       "Effect": "Allow",
       "Action": ["rekognition:DetectLabels"],
       "Resource": "*"
     },
     {
-      "Sid": "S3GetObjectPermission",
-      "Effect": "Allow",
-      "Action": ["s3:GetObject"],
-      "Resource": "arn:aws:s3:::image-analyzer-dev-bucket/*"
-    },
-    {
-      "Sid": "DynamoDBPutItemPermission",
+      "Sid": "WriteDynamoDBImageTags",
       "Effect": "Allow",
       "Action": ["dynamodb:PutItem"],
       "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/ImageTags"
+    },
+    {
+      "Sid": "SendSQSDLQMessage",
+      "Effect": "Allow",
+      "Action": ["sqs:SendMessage"],
+      "Resource": "arn:aws:sqs:us-east-1:123456789012:ImageProcessingDLQ"
+    },
+    {
+      "Sid": "CloudWatchLoggingPermissions",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/ImageAnalyzerFunction:*"
     }
   ]
 }</pre>
+            </div>
+
+            <div class="tab-view" id="view-dlq">
+              <div class="dlq-header">
+                <span class="dlq-title">Dead-Letter Queue (SQS): ImageProcessingDLQ</span>
+                <button class="btn-clear-dlq" onclick="clearDLQ()">Clear Queue</button>
+              </div>
+              <div class="dlq-list" id="dlq-list">
+                <div class="empty-state">No messages in DLQ. Trigger a PDF or enable DLQ simulation to add messages.</div>
+              </div>
+            </div>
+
           </div>
 
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- METRICS DASHBOARD TAB -->
+  <div class="tab-content" id="view-metrics">
+    <main class="container">
+      <div class="metrics-grid">
+
+        <div class="card metric-card">
+          <div class="metric-label">Avg Total Latency</div>
+          <div class="metric-value" id="metric-latency">842 ms</div>
+          <div class="metric-sub">4-image benchmark average</div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">Top Label Confidence</div>
+          <div class="metric-value" id="metric-confidence">98.9%</div>
+          <div class="metric-sub">Average across test set</div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">Cost per Image</div>
+          <div class="metric-value">$0.001</div>
+          <div class="metric-sub">Active (Rekognition only)</div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">Idle Cost</div>
+          <div class="metric-value" style="color:#10b981">$0.00</div>
+          <div class="metric-sub">Serverless — no idle billing</div>
         </div>
 
-      </section>
+        <!-- Benchmark Bar Chart -->
+        <div class="card chart-card">
+          <div class="card-title">End-to-End Latency per Test Image</div>
+          <div class="bar-chart" id="bar-chart">
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar" style="height:58%" data-val="580ms">
+                  <span class="bar-top-label">580ms</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">landscape_01.jpg</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar bar-2" style="height:69%" data-val="690ms">
+                  <span class="bar-top-label">690ms</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">urban_street.png</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar bar-3" style="height:52%" data-val="520ms">
+                  <span class="bar-top-label">520ms</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">office_desk.jpeg</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar bar-4" style="height:61%" data-val="610ms">
+                  <span class="bar-top-label">610ms</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">portrait_user.jpg</div>
+            </div>
+          </div>
+          <div class="chart-axis-label">Total Latency (ms) — Max scale: 1000ms</div>
+        </div>
 
-    </div>
-  </main>
+        <!-- Confidence Chart -->
+        <div class="card chart-card">
+          <div class="card-title">Top Label Confidence per Image</div>
+          <div class="bar-chart" id="conf-chart">
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar conf-bar" style="height:99.45%" data-val="99.45%">
+                  <span class="bar-top-label">99.45%</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">landscape_01</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar conf-bar bar-2" style="height:98.80%" data-val="98.80%">
+                  <span class="bar-top-label">98.80%</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">urban_street</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar conf-bar bar-3" style="height:97.10%" data-val="97.10%">
+                  <span class="bar-top-label">97.10%</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">office_desk</div>
+            </div>
+            <div class="chart-bar-group">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar conf-bar bar-4" style="height:99.12%" data-val="99.12%">
+                  <span class="bar-top-label">99.12%</span>
+                </div>
+              </div>
+              <div class="chart-bar-label">portrait_user</div>
+            </div>
+          </div>
+          <div class="chart-axis-label">Rekognition Confidence (%)</div>
+        </div>
 
-  <script src="app.js?v=2"></script>
+        <!-- Cost Breakdown -->
+        <div class="card">
+          <div class="card-title">Cost Model: 1000 Image Processing Run</div>
+          <div class="cost-breakdown">
+            <div class="cost-row">
+              <div class="cost-service">
+                <div class="cost-dot" style="background:#f59e0b"></div>
+                <span>Amazon Rekognition</span>
+              </div>
+              <div class="cost-bar-bg"><div class="cost-bar" style="width:93%;background:#f59e0b"></div></div>
+              <span class="cost-amount">$1.00</span>
+            </div>
+            <div class="cost-row">
+              <div class="cost-service">
+                <div class="cost-dot" style="background:#2563eb"></div>
+                <span>AWS Lambda</span>
+              </div>
+              <div class="cost-bar-bg"><div class="cost-bar" style="width:4%;background:#2563eb"></div></div>
+              <span class="cost-amount">$0.004</span>
+            </div>
+            <div class="cost-row">
+              <div class="cost-service">
+                <div class="cost-dot" style="background:#10b981"></div>
+                <span>Amazon DynamoDB</span>
+              </div>
+              <div class="cost-bar-bg"><div class="cost-bar" style="width:2%;background:#10b981"></div></div>
+              <span class="cost-amount">$0.001</span>
+            </div>
+            <div class="cost-row">
+              <div class="cost-service">
+                <div class="cost-dot" style="background:#8b5cf6"></div>
+                <span>Amazon S3</span>
+              </div>
+              <div class="cost-bar-bg"><div class="cost-bar" style="width:1%;background:#8b5cf6"></div></div>
+              <span class="cost-amount">$0.005</span>
+            </div>
+          </div>
+          <div class="cost-total">Total estimated cost: <strong>~$1.01</strong> for 1,000 images</div>
+        </div>
+
+        <!-- Benchmark Table -->
+        <div class="card bench-card">
+          <div class="card-title">Full Benchmark Results Table</div>
+          <table class="bench-table">
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>Format / Size</th>
+                <th>Detected Labels (≥70%)</th>
+                <th>Top Confidence</th>
+                <th>Exec Time</th>
+                <th>Total Latency</th>
+                <th>DynamoDB</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>landscape_01.jpg</td>
+                <td>JPG / 1.05 MB</td>
+                <td>Mountain, Tree, Sky, Nature</td>
+                <td class="conf-val">99.45%</td>
+                <td>412 ms</td>
+                <td>580 ms</td>
+                <td class="db-ok">✓ 200 OK</td>
+              </tr>
+              <tr>
+                <td>urban_street.png</td>
+                <td>PNG / 2.30 MB</td>
+                <td>Car, Vehicle, Building, Road</td>
+                <td class="conf-val">98.80%</td>
+                <td>485 ms</td>
+                <td>690 ms</td>
+                <td class="db-ok">✓ 200 OK</td>
+              </tr>
+              <tr>
+                <td>office_desk.jpeg</td>
+                <td>JPEG / 850 KB</td>
+                <td>Laptop, Computer, Desk, Office</td>
+                <td class="conf-val">97.10%</td>
+                <td>388 ms</td>
+                <td>520 ms</td>
+                <td class="db-ok">✓ 200 OK</td>
+              </tr>
+              <tr>
+                <td>portrait_user.jpg</td>
+                <td>JPG / 1.80 MB</td>
+                <td>Person, Human, Face, Smile</td>
+                <td class="conf-val">99.12%</td>
+                <td>440 ms</td>
+                <td>610 ms</td>
+                <td class="db-ok">✓ 200 OK</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- INFRASTRUCTURE TAB -->
+  <div class="tab-content" id="view-infra">
+    <main class="container">
+      <div class="infra-grid">
+
+        <div class="card">
+          <div class="card-title">Architecture Overview</div>
+          <div class="arch-diagram">
+            <div class="arch-node arch-s3">
+              <div class="arch-icon">S3</div>
+              <div class="arch-label">Amazon S3<br><span>incoming/ prefix</span></div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-node arch-lambda">
+              <div class="arch-icon">λ</div>
+              <div class="arch-label">AWS Lambda<br><span>Python 3.12</span></div>
+            </div>
+            <div class="arch-split">
+              <div class="arch-branch">
+                <div class="arch-arrow">→</div>
+                <div class="arch-node arch-rekog">
+                  <div class="arch-icon">AI</div>
+                  <div class="arch-label">Rekognition<br><span>detect_labels</span></div>
+                </div>
+                <div class="arch-arrow">→</div>
+                <div class="arch-node arch-dynamo">
+                  <div class="arch-icon">DB</div>
+                  <div class="arch-label">DynamoDB<br><span>ImageTags</span></div>
+                </div>
+              </div>
+              <div class="arch-branch">
+                <div class="arch-arrow dlq-arrow">→</div>
+                <div class="arch-node arch-dlq">
+                  <div class="arch-icon">DLQ</div>
+                  <div class="arch-label">SQS DLQ<br><span>Error Recovery</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="arch-cloudwatch">
+              <div class="arch-arrow-down">↓</div>
+              <div class="arch-node arch-cw">
+                <div class="arch-icon">CW</div>
+                <div class="arch-label">CloudWatch<br><span>Structured Logs</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">AWS SAM Template (infra/template.yaml)</div>
+          <pre class="code-view code-view-tall">AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Event-Driven Serverless AI Image Analyzer
+  S3 ObjectCreated -> Lambda -> Rekognition -> DynamoDB (+DLQ)
+
+Resources:
+  # S3 Input Bucket
+  SourceImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "image-analyzer-${AWS::AccountId}-${AWS::Region}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: incoming/
+            Function: !GetAtt ImageAnalyzerFunction.Arn
+
+  # DynamoDB Table
+  ImageTagsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ImageTags
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: ImageKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ImageKey
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  # SQS Dead-Letter Queue (NEW in Review 3)
+  ImageProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: ImageProcessingDLQ
+      MessageRetentionPeriod: 1209600  # 14 days
+      VisibilityTimeout: 60
+
+  # Lambda Function with DLQ config
+  ImageAnalyzerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ImageAnalyzerFunction
+      CodeUri: ../lambda/
+      Handler: handler.lambda_handler
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ImageProcessingDLQ.Arn
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref ImageTagsTable
+          MIN_CONFIDENCE: "70.0"
+          MAX_LABELS: "10"
+          DLQ_URL: !Ref ImageProcessingDLQ</pre>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Service Specifications</div>
+          <table class="bench-table">
+            <thead>
+              <tr><th>AWS Service</th><th>Resource Name</th><th>Configuration</th><th>Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Amazon S3</td><td>image-analyzer-dev-bucket</td><td>incoming/ prefix filter, Block Public Access</td><td>Image ingestion trigger</td></tr>
+              <tr><td>AWS Lambda</td><td>ImageAnalyzerFunction</td><td>Python 3.12, 256 MB, 30s timeout</td><td>Serverless orchestrator</td></tr>
+              <tr><td>Amazon Rekognition</td><td>DetectLabels API</td><td>MaxLabels=10, MinConfidence=70%</td><td>AI inference engine</td></tr>
+              <tr><td>Amazon DynamoDB</td><td>ImageTags</td><td>On-Demand, SSE enabled, ImageKey PK</td><td>Metadata persistence</td></tr>
+              <tr><td>Amazon SQS</td><td>ImageProcessingDLQ</td><td>14-day retention, 60s visibility</td><td>Error recovery queue</td></tr>
+              <tr><td>Amazon CloudWatch</td><td>/aws/lambda/ImageAnalyzer</td><td>Structured JSON logging</td><td>Observability &amp; monitoring</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>

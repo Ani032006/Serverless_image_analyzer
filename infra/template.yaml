@@ -3,6 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   AWS SAM Template for Event-Driven Serverless AI Image Analyzer
   Pipeline: S3 ObjectCreated -> Lambda -> Amazon Rekognition -> DynamoDB
+  Review 3 Update: Added SQS Dead-Letter Queue (DLQ) for error recovery.
 
 Globals:
   Function:
@@ -12,7 +13,8 @@ Globals:
     Architecture: x86_64
 
 Resources:
-  # S3 Bucket for Input Image Storage
+
+  # ── S3 Bucket for Input Image Storage ──────────────────────────────────
   SourceImageBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -32,7 +34,7 @@ Resources:
                     Value: incoming/
             Function: !GetAtt ImageAnalyzerFunction.Arn
 
-  # DynamoDB Table for Tag Persistence
+  # ── DynamoDB Table for Tag Persistence ─────────────────────────────────
   ImageTagsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -47,18 +49,38 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
-  # AWS Lambda Orchestration Function
+  # ── SQS Dead-Letter Queue (NEW: Review 3) ──────────────────────────────
+  # Captures failed Lambda invocation payloads for manual inspection
+  # or automated retry. Messages retained for 14 days.
+  ImageProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: ImageProcessingDLQ
+      MessageRetentionPeriod: 1209600   # 14 days in seconds
+      VisibilityTimeout: 60             # Allow 60s for reprocessing attempts
+      Tags:
+        - Key: Project
+          Value: ServerlessImageAnalyzer
+        - Key: Review
+          Value: "3"
+
+  # ── AWS Lambda Orchestration Function ──────────────────────────────────
   ImageAnalyzerFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: ImageAnalyzerFunction
       CodeUri: ../lambda/
       Handler: handler.lambda_handler
+      # DLQ configuration: route async invocation failures to SQS
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ImageProcessingDLQ.Arn
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref ImageTagsTable
           MIN_CONFIDENCE: "70.0"
           MAX_LABELS: "10"
+          DLQ_QUEUE_URL: !Ref ImageProcessingDLQ
       Policies:
         - Statement:
             - Sid: ReadS3UploadedImage
@@ -66,18 +88,34 @@ Resources:
               Action:
                 - s3:GetObject
               Resource: !Sub "arn:aws:s3:::image-analyzer-${AWS::AccountId}-${AWS::Region}/incoming/*"
+
             - Sid: InvokeRekognitionDetectLabels
               Effect: Allow
               Action:
                 - rekognition:DetectLabels
-              Resource: "*"
+              Resource: "*"    # AWS Rekognition DetectLabels has no resource-level ARN
+
             - Sid: WriteDynamoDBImageTags
               Effect: Allow
               Action:
                 - dynamodb:PutItem
               Resource: !GetAtt ImageTagsTable.Arn
 
-  # S3 Invocation Permission for Lambda
+            - Sid: SendSQSDLQMessage
+              Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource: !GetAtt ImageProcessingDLQ.Arn
+
+            - Sid: CloudWatchLoggingPermissions
+              Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ImageAnalyzerFunction:*"
+
+  # ── S3 Invocation Permission for Lambda ────────────────────────────────
   S3InvokeLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -88,11 +126,21 @@ Resources:
 
 Outputs:
   S3BucketName:
-    Description: "Name of the S3 bucket created for uploading images"
+    Description: "Name of the S3 bucket for image uploads"
     Value: !Ref SourceImageBucket
+
   DynamoDBTableName:
-    Description: "DynamoDB table for storing AI image metadata"
+    Description: "DynamoDB table for AI image tag metadata"
     Value: !Ref ImageTagsTable
+
   LambdaFunctionArn:
     Description: "ARN of the serverless orchestrator Lambda function"
     Value: !GetAtt ImageAnalyzerFunction.Arn
+
+  DLQUrl:
+    Description: "URL of the SQS Dead-Letter Queue for failed Lambda events"
+    Value: !Ref ImageProcessingDLQ
+
+  DLQArn:
+    Description: "ARN of the SQS Dead-Letter Queue"
+    Value: !GetAtt ImageProcessingDLQ.Arn
