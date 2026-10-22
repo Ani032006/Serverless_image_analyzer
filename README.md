@@ -47,10 +47,15 @@ CAD/
 │   ├── plan.md
 │   ├── prd.md
 │   └── tech-stack.md
-├── CAD_Review3_Consolidated_Report.docx # Formatted IEEE Word Document (Reviews 1, 2, and 3)
-├── IEEE_Consolidated_Project_Report.md  # Comprehensive IEEE markdown report
-├── generate_report_review3.py          # Generator script for Review 3 docx report
-├── generate_ppt.py                     # Generator script for presentation slide deck
+├── submissions/                        # Official presentation, reports & speaker notes
+│   ├── CAD_Review_1_2.pptx             # Presentation slide deck (Reviews 1 & 2)
+│   ├── CAD_Review_1_2_Report_v2.docx   # Formatted IEEE Word Document (Reviews 1 & 2)
+│   ├── CAD_Review3_Consolidated_Report.docx # Formatted IEEE Word Document (Review 3)
+│   ├── Speaker_Notes_Aniruddh_Review_1_2.docx # Simplified speaker notes (Aniruddh)
+│   └── Speaker_Notes_Konark_Review_1_2.docx   # Simplified speaker notes (Konark)
+├── samples/                            # Sample test images for demo
+├── IEEE_Consolidated_Project_Report.md # Comprehensive IEEE markdown report
+├── PROJECT_OVERVIEW_AND_SPEAKER_NOTES.md # Architecture overview & defense notes
 ├── run_web.py                          # Local HTTP server launcher for web dashboard
 └── README.md
 ```
@@ -76,18 +81,12 @@ Starts a local server and opens the interactive visual simulator:
 ```bash
 python run_web.py
 ```
-Open your browser at `http://localhost:8000`.
+Open your browser at `http://localhost:8080`.
 
 ### 4. Run Multi-Threaded Load Benchmark (Review 3)
 Evaluates pipeline throughput and latency under burst concurrency (10 to 250 images, concurrency 5 to 100):
 ```bash
 python scripts/load_benchmark.py
-```
-
-### 5. Generate Review 3 IEEE Report Document
-Generates the consolidated Microsoft Word report:
-```bash
-python generate_report_review3.py
 ```
 
 ---

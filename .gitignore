@@ -44,6 +44,8 @@ venv.bak/
 *.swp
 *.swo
 
-# OS files
+# OS and Office temporary files
 .DS_Store
 Thumbs.db
+~$*.docx
+~$*.pptx
