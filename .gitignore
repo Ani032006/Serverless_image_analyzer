@@ -49,3 +49,13 @@ venv.bak/
 Thumbs.db
 ~$*.docx
 ~$*.pptx
+
+# Binary installers
+*.msi
+
+# Local report drafts / final variants (keeping committed baseline report intact)
+submissions/*final*.docx
+submissions/*_orig*.docx
+submissions/*_v2.docx
+submissions/CAD_Review3_Report.docx
+

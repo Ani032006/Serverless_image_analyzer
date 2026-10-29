@@ -14,14 +14,11 @@
 ---
 
 ### Abstract
-Applications that process large volumes of images (product catalogues, surveillance feeds, media archives) require an automated way to tag and categorize files without maintaining active server instances 24/7. This project implements an event-driven serverless image tagging pipeline on Amazon Web Services (AWS). Uploading an image to an Amazon S3 bucket triggers an AWS Lambda function running Python 3.12. The function invokes Amazon Rekognition's `DetectLabels` API via an S3 object pointer, formats the returned labels, and writes the structured result to an Amazon DynamoDB table (`ImageTags`). 
+Any application that stores user-uploaded images — product catalogues, surveillance feeds, media archives — eventually needs a way to tag and sort them. Running a server around the clock just to wait for uploads is wasteful. This project builds an event-driven serverless pipeline on AWS that handles the tagging automatically: upload an image to S3, a Lambda function picks it up, calls Rekognition `DetectLabels`, and writes the results to a DynamoDB table called `ImageTags`. Nothing runs when nothing is being uploaded.
 
-Review 3 extends the pipeline with three major additions:
-1. An Amazon SQS Dead-Letter Queue (DLQ) for explicit error routing of unsupported or failed uploads.
-2. An interactive web-based pipeline simulation dashboard (`web/index.html`) featuring an animated 5-step pipeline, real-time console log, DynamoDB JSON inspector, IAM policy viewer, and metrics dashboard.
-3. A multi-threaded load benchmark script (`scripts/load_benchmark.py`) evaluating throughput and latency distributions at up to 250 concurrent invocations.
+In Review 3 we added an SQS Dead-Letter Queue so invalid files and processing failures don't get silently dropped, a browser-based dashboard (`web/index.html`) that visualizes the pipeline end-to-end, and a multi-threaded load benchmark (`scripts/load_benchmark.py`) that pushes up to 250 concurrent invocations to see where things break.
 
-All service permissions follow least-privilege IAM scoping. Across load benchmark scenarios, the pipeline sustains sub-900 ms p95 latency with Rekognition inference remaining the dominant component at 380 to 620 ms. The system maintains an idle cost of $0.00.
+IAM policies are scoped to specific ARNs and actions throughout. Under load testing, p95 latency stayed below 905 ms. Rekognition inference (380–620 ms) accounts for the bulk of that. When idle, cost is zero.
 
 **Keywords**: Serverless Computing, Event-Driven Architecture, Artificial Intelligence, Image Classification, AWS Lambda, Amazon Rekognition, Least-Privilege IAM, NoSQL, Amazon DynamoDB, SQS Dead-Letter Queue, Load Benchmarking.
 
@@ -30,12 +27,9 @@ All service permissions follow least-privilege IAM scoping. Across load benchmar
 ### 1. Introduction
 
 #### 1.1 Background and Motivation
-Applications storing user-uploaded images (such as e-commerce platforms or photo archives) eventually require object tagging for search indexing. Traditional architectures handle this by hosting persistent virtual machines or Kubernetes nodes running pre-loaded computer vision models. That pattern presents three operational challenges:
-1. **Idle costs**: Server instances accrue billing charges continuously regardless of upload traffic volume.
-2. **Maintenance overhead**: Operating system security patching, container runtime updates, and load balancer configuration require ongoing administration.
-3. **Provisioning delay**: Scaling out virtual machine instances takes 2 to 5 minutes, creating bottlenecks during sudden traffic spikes.
+If you run an e-commerce site or a photo archive, at some point you need to tag the images so people can search them. The usual approach is to keep a VM or Kubernetes pod running with a vision model loaded. That works, but it has problems. The VM bills by the hour whether anyone is uploading or not. Somebody has to patch the OS, update the container runtime, and tune the load balancer. And if traffic spikes, spinning up more VMs takes 2–5 minutes — too slow.
 
-Event-driven serverless architectures mitigate these issues by executing compute resources only upon object arrival. AWS Lambda allocates function execution environments dynamically, executes the logic, and tears down the environment; billing is strictly per millisecond of active execution.
+Serverless flips this around. Lambda doesn't run until an event fires. AWS spins up a container, runs your function, and tears it down. You pay per millisecond of actual execution. No uploads, no cost.
 
 #### 1.2 Problem Statement
 The goal of this project is to construct an automated image tagging pipeline that:
@@ -54,7 +48,7 @@ Responsibilities across the two-member project team are split as follows:
 
 ### 2. Related Works
 
-Serverless image processing workload evaluations center on a core trade-off: hosting custom ML models inside Lambda containers versus invoking managed cloud computer vision APIs.
+The main design question for image processing on the cloud is: do you run your own model, or call a managed API? Each approach has different cost, latency, and maintenance trade-offs.
 
 | Reference / Dimension | Traditional VM / Container Architecture | Custom Model on FaaS (e.g., PyTorch on Lambda) | Managed Event-Driven AI Pipeline (Proposed) |
 |---|---|---|---|
@@ -67,19 +61,19 @@ Serverless image processing workload evaluations center on a core trade-off: hos
 
 **Table 1**: Comparative matrix of image processing deployment models.
 
-Roberts and Chapin [1] and Jonas et al. [2] demonstrate that event-driven FaaS reduces infrastructure cost for unpredictable or bursty workloads. Deploying custom models like PyTorch or TensorFlow directly inside AWS Lambda functions introduces heavy cold-start initialization latencies (3 to 10 seconds) caused by loading binary neural network weights into memory [3]. Amazon Rekognition [4] avoids container loading delays because the model endpoints are pre-warmed on AWS managed hardware. On cloud security, AWS least-privilege guidance [5] emphasizes that service execution policies must restrict target ARNs and actions to prevent credential abuse. Leitner et al. [6] document that SQS Dead-Letter Queues provide the industry standard pattern for asynchronous failure recovery in serverless pipelines.
+Roberts and Chapin [1] and the Berkeley serverless paper by Jonas et al. [2] both argue that FaaS cuts cost for bursty workloads. The catch with running PyTorch or TensorFlow inside Lambda is cold start — importing model weights adds 3–10 seconds of startup delay [3]. Rekognition [4] sidesteps this because the model is already loaded on Amazon's side; our Lambda just makes an HTTP call. On security, AWS's own documentation [5] is clear that scoped IAM policies should be the default, not something you add later — over-permissioned roles are one of the most common cloud misconfigurations. Leitner et al. [6] cover SQS Dead-Letter Queues as the standard pattern for handling async failures in serverless pipelines.
 
 ---
 
 ### 3. Proposed Methodology
 
 #### 3.1 Architectural Principles
-The system design adheres to five engineering rules:
-1. **Event-driven execution**: Pipeline execution is strictly triggered by S3 `s3:ObjectCreated:*` notifications.
-2. **Stateless compute**: Lambda invocations execute independently with zero shared local state.
-3. **Managed AI inference**: We invoke Rekognition's `DetectLabels` endpoint rather than hosting custom neural network containers, trading model customizability for zero infrastructure maintenance.
-4. **Least-privilege security**: Every IAM policy statement defines explicit API actions and exact target ARNs. The single wildcard (`Resource: "*"`) for Rekognition `DetectLabels` reflects an AWS IAM service design constraint rather than a security compromise.
-5. **Resilient error routing**: Unsupported file types and AWS ClientErrors are explicitly forwarded to an SQS Dead-Letter Queue (DLQ) to prevent silent data loss (Review 3).
+Five rules guided the design:
+1. **Event-driven execution**: Nothing runs until S3 fires an `s3:ObjectCreated:*` notification. No polling.
+2. **Stateless compute**: Each Lambda invocation is independent — no shared memory, no session.
+3. **Managed AI inference**: We call Rekognition's `DetectLabels` instead of loading our own model. This means we can't fine-tune the model for specific domains, but we also don't have to maintain it.
+4. **Least-privilege security**: Every IAM statement names specific actions and ARNs. The one wildcard (`Resource: "*"` for Rekognition) is because the `DetectLabels` API doesn't support resource-level ARNs — it's an AWS limitation, not a shortcut on our part.
+5. **Explicit error routing**: Invalid files and processing errors go to an SQS Dead-Letter Queue. Before Review 3, a failed image was just a log line. Now it's a recoverable message (Review 3).
 
 #### 3.2 System Architecture Overview
 The pipeline consists of five architectural layers in Review 3:
@@ -363,7 +357,7 @@ System execution was validated locally using `scripts/local_test.py` with `unitt
 *Listing 1: Formatted DynamoDB item generated during local execution test.*
 
 #### 7.2 4-Image Baseline Benchmark Results (Reviews 1 & 2)
-Benchmarking was performed across four sample image categories. All test files were clean, well-lit photographs.
+We tested with four images from different categories. All were clean, well-lit photos — the kind where Rekognition performs best.
 
 | Test Case Image | Format / File Size | Detected Labels ($\ge 70\%$ Conf) | Top Label Confidence | Lambda Exec Time ($T_{\text{exec}}$) | Total Latency ($T_{\text{total}}$) | DynamoDB Write Status |
 |---|---|---|---|---|---|---|
@@ -374,8 +368,10 @@ Benchmarking was performed across four sample image categories. All test files w
 
 **Table 3**: Baseline latency and accuracy benchmark results (4 images).
 
+One thing worth noting: the PNG file (2.30 MB) took noticeably longer than the smaller JPEGs, which makes sense — more bytes for Rekognition to decode. We initially set the confidence threshold at 80%, but that caused Rekognition to drop valid parent-category labels like "Nature" and "Plant" that fell in the 70–79% range. After a few rounds of testing we settled on 70% as the cutoff.
+
 #### 7.3 Review 3: Dead-Letter Queue (DLQ) Integration
-The SQS Dead-Letter Queue (`ImageProcessingDLQ`) was implemented in Review 3 to eliminate silent failure drops. When non-image files or corrupted records enter the pipeline, `send_to_dlq()` formats a structured failure message and dispatches it via SQS.
+Before Review 3, if someone uploaded a `.pdf` or if Rekognition threw an error, the handler logged a warning and moved on. The file was effectively lost — nobody got notified, and there was no way to retry. The SQS Dead-Letter Queue (`ImageProcessingDLQ`) fixes this. Failed events now land in a queue with a 14-day retention window, tagged with an error code so you can tell what went wrong.
 
 | Event Type | Trigger Condition | DLQ Error Code | DynamoDB Write |
 |---|---|---|---|
@@ -386,6 +382,8 @@ The SQS Dead-Letter Queue (`ImageProcessingDLQ`) was implemented in Review 3 to 
 
 **Table 4**: DLQ Routing Decision Matrix: Review 3.
 
+One design choice we went back and forth on: whether to DLQ unsupported file formats or just silently skip them. We decided to DLQ them because in a production system, a spike of `.pdf` uploads hitting the bucket probably means something is misconfigured upstream, and someone should know about it.
+
 #### 7.4 Review 3: Interactive Web Simulation Dashboard
 A browser-based client dashboard (`web/index.html`) was developed using vanilla HTML, CSS, and JavaScript. It provides:
 1. **Pipeline Demo Tab**: Visual 5-step animated diagram lighting up active AWS services in real time, threshold/label sliders, DLQ simulation toggle, detected label display with confidence bars, real-time console log, DynamoDB JSON viewer, and SQS DLQ event viewer.
@@ -393,7 +391,7 @@ A browser-based client dashboard (`web/index.html`) was developed using vanilla 
 3. **Infrastructure Tab**: High-level AWS architecture diagram, embedded AWS SAM `template.yaml`, and a service configuration matrix.
 
 #### 7.5 Review 3: Load Benchmark at Scale
-A multi-threaded load benchmark script (`scripts/load_benchmark.py`) was executed to evaluate pipeline throughput and latency distribution under burst conditions across four test scenarios.
+We wrote a multi-threaded benchmark script (`scripts/load_benchmark.py`) and ran it across four scenarios to see how the pipeline holds up under pressure.
 
 | Scenario | Batch Size | Concurrency | Avg Latency | p95 Latency | DLQ Routed | Success Rate |
 |---|---|---|---|---|---|---|
@@ -404,11 +402,9 @@ A multi-threaded load benchmark script (`scripts/load_benchmark.py`) was execute
 
 **Table 5**: Load Benchmark Results across 4 concurrency scenarios (`scripts/load_benchmark.py`).
 
-Key observations from load testing:
-1. **Sub-second SLA**: p95 latency remained under 905 ms across all scenarios up to 250 concurrent image requests.
-2. **Bottleneck analysis**: Rekognition inference (averaging 500 to 540 ms) accounted for over 85% of execution time; Lambda warm runtime remained under 25 ms.
-3. **DLQ overhead**: SQS message dispatch added negligible execution time (~5 ms) and operated without blocking the main event loop.
-4. **Horizontal elasticity**: The FaaS architecture scaled seamlessly without requiring provisioned concurrency.
+A few things stood out. p95 latency stayed under 905 ms even at 250 concurrent requests, which was better than we expected — we thought Rekognition might start throttling around 100. Rekognition inference (500–540 ms on average) is the clear bottleneck, eating over 85% of total execution time. Lambda's own warm runtime stays under 25 ms, so there's not much to optimize on the compute side. The DLQ dispatch adds about 5 ms per message and doesn't block the main processing loop.
+
+One number that surprised us: Scenario A (10 images, 5 threads) had the highest average latency at 669 ms. This is likely because the first few invocations hit cold starts, and with only 10 total invocations, those cold starts drag the average up more than in larger batches where warm invocations dominate.
 
 #### 7.6 Cost Analysis
 Under low volume or evaluation workloads, system costs fall entirely within the AWS Free Tier:
@@ -422,14 +418,11 @@ Under low volume or evaluation workloads, system costs fall entirely within the 
 
 ### 8. Conclusion
 
-The completed three-review project demonstrates a production-grade, event-driven serverless image tagging architecture. Reviews 1 and 2 established core ingestion, Rekognition inference, DynamoDB persistence, and least-privilege IAM scoping. Review 3 resolved all previous future work targets:
-1. **SQS Dead-Letter Queue**: Robust failure routing for invalid file formats and API exceptions with 14-day message retention.
-2. **Interactive Web Dashboard**: Local web interface offering real-time visualization of the pipeline, IAM policies, and performance metrics.
-3. **Scale Benchmarking**: Multi-threaded empirical load testing validating sub-second p95 latency under burst traffic up to 250 images.
+The pipeline does what we set out to build: upload an image, get tags in DynamoDB, pay nothing when idle. The DLQ addition in Review 3 was probably the most important change — before that, failed images just disappeared into a log line. Now they're recoverable.
 
-Technical limitations:
-- Accuracy evaluations are based on clean, well-lit test photos; performance under severe image degradation remains unmeasured.
-- Pre-trained Rekognition endpoints prevent domain-specific fine-tuning.
+The load benchmark confirmed that Rekognition is the bottleneck, not Lambda. If latency requirements ever dropped below 400 ms, we'd need to look at a different inference approach entirely — possibly a lightweight custom model on Lambda with a smaller weight footprint, though that brings back cold-start problems.
+
+We should be honest about what we didn't test. All our benchmark images were clean JPEGs and PNGs under 3 MB. We haven't tried heavily compressed JPEG artifacts (quality below 20), motion-blurred surveillance frames, night-vision IR images, or images with dozens of small overlapping objects. Rekognition's confidence scores would almost certainly drop on those inputs, and some objects might not get detected at all. We also can't fine-tune Rekognition — if you needed to distinguish 50 breeds of dogs, the generic labels ("Dog", "Canine", "Animal") wouldn't be enough, and you'd need a custom SageMaker endpoint instead.
 
 ---
 
