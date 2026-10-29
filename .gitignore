@@ -38,9 +38,10 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE / Editor
+# IDE / Editor / Local Agent Skills
 .vscode/
 .idea/
+.agents/
 *.swp
 *.swo
 
